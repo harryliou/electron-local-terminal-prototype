@@ -1,4 +1,5 @@
 const {app, BrowserWindow, ipcMain} = require("electron");
+const path = require('path')
 const pty = require("node-pty");
 const os = require("os");
 var shell = os.platform() === "win32" ? "powershell.exe" : "bash";
@@ -9,16 +10,15 @@ function createWindow() {
         height: 450,
         width: 800,
         webPreferences: {
-            nodeIntegration: true
+            // nodeIntegration: true,  // user node api at renderer process, disable for safety
+            // contextIsolation: false
+            preload: path.join(__dirname, 'preload.js')
         }
     });
     mainWindow.loadURL(`file://${__dirname}/index.html`);
     mainWindow.on("closed", function() {
         mainWindow = null;
     });
-
-
-    //ipcing
 
     var ptyProcess = pty.spawn(shell, [], {
         name: "xterm-color",
@@ -28,29 +28,26 @@ function createWindow() {
         env: process.env
     });
 
-    ptyProcess.on('data', function(data) {
-        mainWindow.webContents.send("terminal.incomingData", data);
-        console.log("Data sent");
+    ptyProcess.onData(function(data) {
+        mainWindow&&mainWindow.webContents.send("incomingData", data);
+        // console.log("Data sent");
     });
-    ipcMain.on("terminal.keystroke", (event, key) => {
+    ipcMain.on("keystroke", (event, key) => {
         ptyProcess.write(key);
     });
-
-
-
-
 }
 
-app.on("ready", createWindow);
+app.whenReady().then(() => {
+    createWindow()
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow()
+        }
+    })
+})
 
-app.on("window-all-closed", function() {
-    if (process.platform !== "darwin") {
-        app.quit();
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+        app.quit()
     }
-});
-
-app.on("activate", function() {
-    if (mainWindow === null) {
-        createWindow();
-    }
-});
+})
